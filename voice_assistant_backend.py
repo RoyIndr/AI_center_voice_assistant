@@ -1,4 +1,4 @@
-# voice_assistant_backend.py (with working audio + multi-turn memory)
+# voice_assistant_backend.py (with voice output)
 
 import os
 import json
@@ -19,7 +19,7 @@ AZURE_OPENAI_KEY = os.getenv("AZURE_OPENAI_KEY")
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
 AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT")
 
-# Setup OpenAI Client (new SDK)
+# Setup OpenAI Client
 client = AzureOpenAI(
     api_key=AZURE_OPENAI_KEY,
     api_version="2023-05-15",
@@ -41,12 +41,79 @@ HTML_PAGE = '''
 <head>
     <meta charset="UTF-8">
     <title>3D Avatar Voice Assistant</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .listening {
+            background-color: #ffeb3b;
+            color: #333;
+        }
+        .processing {
+            background-color: #2196f3;
+            color: white;
+        }
+        .speaking {
+            background-color: #4caf50;
+            color: white;
+        }
+        button {
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #3367d6;
+        }
+    </style>
 </head>
 <body>
     <h1>Voice Assistant</h1>
+    <div id="status"></div>
     <form action="/activate" method="post">
-        <button type="submit">🎤 Speak Now</button>
+        <button type="submit">🎤 Activate Assistant</button>
     </form>
+    <div id="conversation" style="margin-top: 20px;"></div>
+    
+    <script>
+        document.querySelector('form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = 'status listening';
+            statusDiv.textContent = '🎤 Listening... Speak now!';
+            
+            fetch('/activate', { method: 'POST' })
+                .then(response => response.text())
+                .then(html => {
+                    document.getElementById('conversation').innerHTML = html;
+                    statusDiv.className = '';
+                    statusDiv.textContent = '';
+                    
+                    // Auto-play the audio response
+                    const audio = document.querySelector('audio');
+                    if (audio) {
+                        audio.play();
+                    }
+                })
+                .catch(error => {
+                    statusDiv.className = '';
+                    statusDiv.textContent = '❌ Error: ' + error.message;
+                });
+        });
+    </script>
 </body>
 </html>
 '''
@@ -58,11 +125,25 @@ def index():
 # Speech Recognition
 def recognize_speech():
     config = speechsdk.SpeechConfig(subscription=AZURE_SPEECH_KEY, region=AZURE_SPEECH_REGION)
-    recognizer = speechsdk.SpeechRecognizer(speech_config=config)
+    config.speech_recognition_language = "en-US"
+    
+    # Use microphone input
+    audio_config = speechsdk.audio.AudioConfig(use_default_microphone=True)
+    recognizer = speechsdk.SpeechRecognizer(speech_config=config, audio_config=audio_config)
+    
     print("Listening...")
-    result = recognizer.recognize_once()
-    print("Recognition result:", result.text)
-    return result.text if result.reason == speechsdk.ResultReason.RecognizedSpeech else ""
+    result = recognizer.recognize_once_async().get()
+    
+    if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+        print(f"Recognized: {result.text}")
+        return result.text
+    elif result.reason == speechsdk.ResultReason.NoMatch:
+        print("No speech could be recognized")
+    elif result.reason == speechsdk.ResultReason.Canceled:
+        cancellation = speechsdk.CancellationDetails.from_result(result)
+        print(f"Speech Recognition canceled: {cancellation.reason}")
+    
+    return ""
 
 # Persistent conversation history
 conversation_history = [
@@ -71,53 +152,86 @@ conversation_history = [
 
 def get_reply(user_input):
     conversation_history.append({"role": "user", "content": user_input})
-    response = client.chat.completions.create(
-        model=AZURE_OPENAI_DEPLOYMENT,
-        messages=conversation_history,
-        temperature=0.7,
-        max_tokens=200,
-    )
-    assistant_reply = response.choices[0].message.content
-    conversation_history.append({"role": "assistant", "content": assistant_reply})
-    return assistant_reply
+    
+    try:
+        response = client.chat.completions.create(
+            model=AZURE_OPENAI_DEPLOYMENT,
+            messages=conversation_history,
+            temperature=0.7,
+            max_tokens=250,
+        )
+        assistant_reply = response.choices[0].message.content
+        conversation_history.append({"role": "assistant", "content": assistant_reply})
+        return assistant_reply
+    except Exception as e:
+        print(f"Error getting OpenAI response: {str(e)}")
+        return "I'm having trouble thinking right now. Please try again later."
 
-# Text-to-Speech
+# Text-to-Speech with playback
 def text_to_speech(text, filename="static/reply.wav"):
-    config = speechsdk.SpeechConfig(subscription=AZURE_SPEECH_KEY, region=AZURE_SPEECH_REGION)
-    config.speech_synthesis_voice_name = "en-US-JennyNeural"
-    audio_config = speechsdk.audio.AudioOutputConfig(filename=filename)
-    synthesizer = speechsdk.SpeechSynthesizer(speech_config=config, audio_config=audio_config)
-    result = synthesizer.speak_text_async(text).get()
-    return filename if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted else None
+    try:
+        config = speechsdk.SpeechConfig(subscription=AZURE_SPEECH_KEY, region=AZURE_SPEECH_REGION)
+        config.speech_synthesis_voice_name = "en-US-JennyNeural"
+        audio_config = speechsdk.audio.AudioOutputConfig(filename=filename)
+        
+        synthesizer = speechsdk.SpeechSynthesizer(speech_config=config, audio_config=audio_config)
+        result = synthesizer.speak_text_async(text).get()
+        
+        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+            print(f"Speech synthesized to {filename}")
+            return filename
+        else:
+            print(f"Speech synthesis failed: {result.reason}")
+            return None
+    except Exception as e:
+        print(f"Error in text-to-speech: {str(e)}")
+        return None
 
 # Serve static audio directly
 @app.route('/static/<path:filename>')
 def serve_static(filename):
     return send_from_directory('static', filename)
 
-# Flask route to trigger the assistant via form POST
+# Flask route to trigger the assistant
 @app.route('/activate', methods=['POST'])
 def activate():
+    # Step 1: Recognize user speech
     user_input = recognize_speech()
     if not user_input:
-        return render_template_string("<h2>❌ Speech not recognized. Please try again.</h2><a href='/'>⬅ Back</a>")
-
+        return render_template_string("<div class='status'>❌ Speech not recognized. Please try again.</div>")
+    
     print(f"User said: {user_input}")
+    
+    # Step 2: Get AI response
     reply = get_reply(user_input)
     print(f"Assistant replied: {reply}")
-
+    
+    # Step 3: Convert to speech
     audio_path = text_to_speech(reply)
+    
+    # Notify Unity client
     if unity_ws:
-        asyncio.run(unity_ws.send(json.dumps({"type": "reply", "text": reply})))
-
-    return render_template_string(f"""
-        <h2>✅ You said: <em>{user_input}</em></h2>
-        <h3>🤖 Assistant replied: <em>{reply}</em></h3>
-        <audio controls autoplay>
+        asyncio.run(unity_ws.send(json.dumps({
+            "type": "reply",
+            "text": reply,
+            "audio_url": f"http://localhost:5000/static/reply.wav"
+        })))
+    
+    # Return HTML with conversation and audio player
+    return render_template_string("""
+        <div class="user-message">
+            <strong>You:</strong> {{ user_input }}
+        </div>
+        <div class="assistant-message">
+            <strong>Assistant:</strong> {{ reply }}
+        </div>
+        {% if audio_path %}
+        <audio controls autoplay style="margin-top: 15px;">
             <source src="/static/reply.wav" type="audio/wav">
+            Your browser does not support the audio element.
         </audio>
-        <br><a href='/'>⬅ Back</a>
-    """)
+        {% endif %}
+    """, user_input=user_input, reply=reply, audio_path=audio_path)
 
 # WebSocket server to talk with Unity
 async def unity_socket(websocket, path):
@@ -137,18 +251,16 @@ if __name__ == '__main__':
 
     # Start Flask in a separate thread
     def run_flask():
-        app.run(port=5000)
+        app.run(port=5000, threaded=True)
 
     flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
     flask_thread.start()
 
     # WebSocket server
     async def start_websocket():
         async with websockets.serve(unity_socket, 'localhost', 8765):
             print("WebSocket server started on ws://localhost:8765")
-            while True:
-                await asyncio.sleep(1)
+            await asyncio.Future()  # Run forever
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(start_websocket())
+    asyncio.run(start_websocket())
