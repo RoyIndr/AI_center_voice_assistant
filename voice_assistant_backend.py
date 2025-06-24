@@ -97,6 +97,8 @@ HTML_PAGE = '''
     
     <script>
         document.getElementById('activateBtn').addEventListener('click', async function() {
+            document.querySelectorAll('audio').forEach(audio => audio.remove());
+            
             const statusDiv = document.getElementById('status');
             const conversationDiv = document.getElementById('conversation');
             statusDiv.className = 'status listening';
@@ -168,16 +170,23 @@ HTML_PAGE = '''
                 }
                 
                 // Create audio element with base64 data
+                // Remove any existing audio elements
+                //document.querySelectorAll('audio').forEach(audio => audio.remove());
+
+                // Create and insert new audio element
                 const audioElement = document.createElement('audio');
                 audioElement.controls = true;
                 audioElement.autoplay = true;
-                audioElement.innerHTML = `
-                    <source src="data:audio/wav;base64,${speechData.audio}" type="audio/wav">
-                    Your browser does not support the audio element.
-                `;
-                
-                // Add audio to the conversation
+
+                const source = document.createElement('source');
+                source.src = `data:audio/wav;base64,${speechData.audio}`;
+                source.type = 'audio/wav';
+
+                audioElement.appendChild(source);
+
+                // Add audio to the latest assistant response
                 conversationDiv.querySelector('.conversation:last-child').appendChild(audioElement);
+
                 
                 statusDiv.className = 'status speaking';
                 statusDiv.textContent = '🔊 Assistant is speaking...';
