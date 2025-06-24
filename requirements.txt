@@ -1,0 +1,16 @@
+# Core dependencies
+Flask==3.0.3
+websockets==12.0
+python-dotenv==1.0.1
+numpy==1.26.4
+
+# MediaPipe and computer vision
+opencv-python==4.9.0.80
+mediapipe==0.10.11
+
+# Azure services
+azure-cognitiveservices-speech==1.38.0
+openai==1.30.1
+
+# Async and concurrency
+asyncio==3.4.3
