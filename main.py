@@ -63,11 +63,8 @@ UB_KNOWLEDGE_BASE = {
         "deskripsi": "AI Center Universitas Brawijaya adalah pusat penelitian dan pengembangan kecerdasan buatan yang berfokus pada inovasi teknologi AI untuk mendukung pendidikan dan penelitian",
         "program": [
             "Pelatihan AI dan Machine Learning",
-            "Workshop Deep Learning",
-            "Kompetisi AI",
-            "Penelitian kolaboratif dengan industri",
-            "Inkubator startup AI",
-            "Konsultasi implementasi AI untuk UMKM"
+            "Workshop AI",
+            "Penelitian kolaboratif"
         ],
         "fasilitas": [
             "Lab AI dengan GPU high-end",
@@ -383,7 +380,7 @@ HTML_PAGE = '''
             <h4>💡 Tips Penggunaan:</h4>
             <ul>
                 <li>Klik tombol dan mulai bicara dalam bahasa Indonesia</li>
-                <li>Contoh: "Halo Brava, aku mau tanya tentang jurusan Teknik Informatika"</li>
+                <li>Contoh: "Halo Brava, aku mau tanya tentang jurusan Teknik Elektro"</li>
                 <li>Atau: "Bantuin aku pilih jurusan yang cocok dong"</li>
                 <li>Bicara dengan jelas dan tunggu hingga selesai</li>
             </ul>
